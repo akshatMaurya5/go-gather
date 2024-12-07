@@ -15,20 +15,23 @@ func main() {
 	router.GET("/health", healthHandler)
 	router.GET("/test-db", testDbHandler)
 
-	// Start the server
 	go func() {
 		if err := router.Run(":3000"); err != nil {
 			panic("Error starting server: " + err.Error())
 		}
 	}()
 
-	// Test the database connection
 	if err := utils.TestDbConnection(); err != nil {
 		panic("Database connection failed: " + err.Error())
 	}
 
-	// Start the socket service
-	services.TestSocketService()
+	go func() {
+		socketService := services.NewSocketService()
+		socketService.Start()
+	}()
+
+	// function to test the socket service
+	// services.TestSocketService()
 
 	// Block the main goroutine to keep the server running
 	select {}
