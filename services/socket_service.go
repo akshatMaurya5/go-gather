@@ -1,7 +1,9 @@
 package services
 
 import (
+	"encoding/json"
 	"fmt"
+	"go-meta/models"
 	"log"
 	"net/http"
 	"sync"
@@ -18,6 +20,7 @@ type Message struct {
 type SocketService struct {
 	upgrader websocket.Upgrader
 	clients  sync.Map
+	rooms    map[string]*RoomService // Track rooms
 }
 
 func NewSocketService() *SocketService {
@@ -26,9 +29,10 @@ func NewSocketService() *SocketService {
 			ReadBufferSize:  1024,
 			WriteBufferSize: 1024,
 			CheckOrigin: func(r *http.Request) bool {
-				return true // Allow all origins for now
+				return true
 			},
 		},
+		rooms: make(map[string]*RoomService), // Initialize rooms map
 	}
 }
 
@@ -73,29 +77,48 @@ func (s *SocketService) handleClient(wsConn *websocket.Conn, clientAddr string) 
 		return
 	}
 
-	// Read messages
 	for {
 		var msg Message
 		err := wsConn.ReadJSON(&msg)
 		if err != nil {
-			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				log.Printf("Unexpected close error for %s: %v", clientAddr, err)
-			} else {
-				log.Printf("Connection closed for %s: %v", clientAddr, err)
-			}
+			log.Printf("Connection closed for %s: %v", clientAddr, err)
 			break
 		}
 
-		// Validate and log message
-		if msg.Type == "" || msg.Content == "" {
-			log.Println("Received an empty message from", clientAddr)
-		} else {
-			log.Printf("Received message from %s: %+v", clientAddr, msg)
+		// Log the received message
+		log.Printf("Received message from %s: %+v", clientAddr, msg)
+
+		// Handle create room and join room messages
+		switch msg.Type {
+		case "createRoom":
+			room := createRoom()                    // Create a new room
+			s.rooms[room.ID] = NewRoomService(room) // Store the room
+			s.BroadcastMessage(Message{Type: "info", Content: "Room created with ID: " + room.ID})
+			log.Printf("Room created with ID: %s", room.ID) // Log room creation
+		case "joinRoom":
+			var joinData struct {
+				RoomId string `json:"roomId"`
+				UserId string `json:"userId"`
+			}
+			if err := json.Unmarshal([]byte(msg.Content), &joinData); err == nil {
+				log.Printf("Join request for Room ID: %s by User ID: %s", joinData.RoomId, joinData.UserId) // Log join request
+				roomService, exists := s.rooms[joinData.RoomId]
+				if exists {
+					client := &models.Socket{Conn: wsConn, UserId: joinData.UserId, RoomId: joinData.RoomId}
+					roomService.Join(client)                                               // Join the room
+					log.Printf("User %s joined room %s", joinData.UserId, joinData.RoomId) // Log successful join
+				} else {
+					log.Printf("Room %s does not exist", joinData.RoomId) // Log room not found
+				}
+			} else {
+				log.Printf("Error unmarshalling join data: %v", err) // Log unmarshalling error
+			}
+		default:
+			log.Printf("Unknown message type: %s", msg.Type) // Log unknown message type
 		}
 	}
 }
 
-// Utility function to broadcast message to all connected clients
 func (s *SocketService) BroadcastMessage(msg Message) {
 	s.clients.Range(func(key, value interface{}) bool {
 		client := value.(*websocket.Conn)
@@ -109,10 +132,9 @@ func (s *SocketService) BroadcastMessage(msg Message) {
 }
 
 func TestSocketService() {
-	// Create a new socket service
+
 	socketService := NewSocketService()
 
-	// Simulate some test scenarios
 	go func() {
 		// Broadcast a test message after a short delay
 		time.Sleep(5 * time.Second)
@@ -121,7 +143,6 @@ func TestSocketService() {
 			Content: "Test broadcast message",
 		})
 
-		// Simulate periodic test messages
 		ticker := time.NewTicker(10 * time.Second)
 		defer ticker.Stop()
 
@@ -133,9 +154,7 @@ func TestSocketService() {
 		}
 	}()
 
-	// Additional test logging
 	log.Println("Starting WebSocket Test Service")
 
-	// Start the socket service
 	socketService.Start()
 }
