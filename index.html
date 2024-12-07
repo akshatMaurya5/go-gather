@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket Test</title>
+</head>
+
+<body>
+    <h1>WebSocket Test</h1>
+    <button id="connect">Connect</button>
+    <button id="send">Send Message</button>
+    <div id="messages"></div>
+
+    <script>
+        let ws;
+
+        document.getElementById('connect').onclick = function () {
+            ws = new WebSocket('ws://localhost:64527/ws');
+
+            ws.onopen = function () {
+                console.log('Connected to the server');
+                document.getElementById('messages').innerHTML += '<p>Connected to the server</p>';
+            };
+
+            ws.onmessage = function (event) {
+                console.log('Message from server: ', event.data);
+                document.getElementById('messages').innerHTML += '<p>Message from server: ' + event.data + '</p>';
+            };
+
+            ws.onerror = function (error) {
+                console.error('WebSocket error: ', error);
+            };
+
+            ws.onclose = function () {
+                console.log('Disconnected from the server');
+                document.getElementById('messages').innerHTML += '<p>Disconnected from the server</p>';
+            };
+        };
+
+        document.getElementById('send').onclick = function () {
+            if (ws) {
+                const message = JSON.stringify({ type: 'chat', content: 'Hello, server!' });
+                ws.send(message);
+                console.log('Sent: ', message);
+            }
+        };
+    </script>
+</body>
+
+</html>
