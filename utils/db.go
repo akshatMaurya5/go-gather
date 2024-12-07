@@ -3,15 +3,26 @@ package utils
 import (
 	"context"
 	"fmt"
+	"log"
+	"os"
 	"time"
 
+	"github.com/joho/godotenv"
+	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 func getConnection() (*mongo.Client, error) {
 	// MongoDB connection URI
-	uri := "mongodb+srv://akshat:akshat@sales-assist.en35s.mongodb.net/?retryWrites=true&w=majority&appName=sales-assist"
+
+	err := godotenv.Load(".env")
+
+	if err != nil {
+		log.Fatalf("Error loading .env file")
+	}
+
+	uri := os.Getenv("URI")
 
 	clientOptions := options.Client().ApplyURI(uri)
 	client, err := mongo.NewClient(clientOptions)
@@ -51,4 +62,29 @@ func TestDbConnection() error {
 	return nil
 }
 
-// Uncomment the main function if you want to run this file directly for testing
+func GetCollection(collectionName string) (*mongo.Collection, error) {
+	dbConnection, err := getConnection()
+	if err != nil {
+		return nil, err
+	}
+
+	collection := dbConnection.Database("sales-assist").Collection(collectionName)
+	return collection, nil
+}
+
+func GetAllCollections() ([]string, error) {
+	dbConnection, err := getConnection()
+	if err != nil {
+		return nil, err
+	}
+
+	// Get the database reference
+	database := dbConnection.Database("initial")
+
+	// Call ListCollectionNames on the database
+	collections, err := database.ListCollectionNames(context.Background(), bson.M{})
+	if err != nil {
+		return nil, err
+	}
+	return collections, nil
+}
