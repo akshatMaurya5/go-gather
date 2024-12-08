@@ -20,7 +20,7 @@ type Message struct {
 type SocketService struct {
 	upgrader websocket.Upgrader
 	clients  sync.Map
-	rooms    map[string]*RoomService // Track rooms
+	rooms    map[string]*RoomService
 }
 
 func NewSocketService() *SocketService {
@@ -28,11 +28,9 @@ func NewSocketService() *SocketService {
 		upgrader: websocket.Upgrader{
 			ReadBufferSize:  1024,
 			WriteBufferSize: 1024,
-			CheckOrigin: func(r *http.Request) bool {
-				return true
-			},
+			CheckOrigin:     func(r *http.Request) bool { return true },
 		},
-		rooms: make(map[string]*RoomService), // Initialize rooms map
+		rooms: make(map[string]*RoomService),
 	}
 }
 
@@ -40,8 +38,7 @@ func (s *SocketService) Start() {
 	http.HandleFunc("/ws", s.handleWebSocket)
 	log.Println("Socket service running on port 64527")
 
-	err := http.ListenAndServe(":64527", nil)
-	if err != nil {
+	if err := http.ListenAndServe(":64527", nil); err != nil {
 		log.Fatalf("Error starting socket service: %v", err)
 	}
 }
@@ -53,24 +50,20 @@ func (s *SocketService) handleWebSocket(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Store the connection
 	clientAddr := wsConn.RemoteAddr().String()
 	s.clients.Store(clientAddr, wsConn)
 	log.Println("Client connected:", clientAddr)
 
-	// Handle the connection
 	go s.handleClient(wsConn, clientAddr)
 }
 
 func (s *SocketService) handleClient(wsConn *websocket.Conn, clientAddr string) {
 	defer func() {
-		// Cleanup
 		s.clients.Delete(clientAddr)
 		wsConn.Close()
 		log.Println("Client disconnected:", clientAddr)
 	}()
 
-	// Send welcome message
 	err := wsConn.WriteJSON(Message{Type: "info", Content: "Welcome to the WebSocket server!"})
 	if err != nil {
 		log.Printf("Error sending welcome message: %v", err)
@@ -85,36 +78,60 @@ func (s *SocketService) handleClient(wsConn *websocket.Conn, clientAddr string) 
 			break
 		}
 
-		// Log the received message
 		log.Printf("Received message from %s: %+v", clientAddr, msg)
 
-		// Handle create room and join room messages
 		switch msg.Type {
 		case "createRoom":
-			room := createRoom()                    // Create a new room
-			s.rooms[room.ID] = NewRoomService(room) // Store the room
-			s.BroadcastMessage(Message{Type: "info", Content: "Room created with ID: " + room.ID})
-			log.Printf("Room created with ID: %s", room.ID) // Log room creation
+			room := createRoom()
+			s.rooms[room.ID] = NewRoomService(room)
+			s.BroadcastMessage(Message{Type: "info", Content: fmt.Sprintf("Room created with ID: %s", room.ID)})
 		case "joinRoom":
 			var joinData struct {
 				RoomId string `json:"roomId"`
 				UserId string `json:"userId"`
 			}
 			if err := json.Unmarshal([]byte(msg.Content), &joinData); err == nil {
-				log.Printf("Join request for Room ID: %s by User ID: %s", joinData.RoomId, joinData.UserId) // Log join request
 				roomService, exists := s.rooms[joinData.RoomId]
 				if exists {
 					client := &models.Socket{Conn: wsConn, UserId: joinData.UserId, RoomId: joinData.RoomId}
-					roomService.Join(client)                                               // Join the room
-					log.Printf("User %s joined room %s", joinData.UserId, joinData.RoomId) // Log successful join
+					roomService.Join(client)
 				} else {
-					log.Printf("Room %s does not exist", joinData.RoomId) // Log room not found
+					log.Printf("Room %s does not exist", joinData.RoomId)
 				}
 			} else {
-				log.Printf("Error unmarshalling join data: %v", err) // Log unmarshalling error
+				log.Printf("Error unmarshalling join data: %v", err)
 			}
+		case "chat":
+			var chatData struct {
+				RoomId  string `json:"roomId"`
+				UserId  string `json:"userId"`
+				Message string `json:"message"`
+			}
+			if err := json.Unmarshal([]byte(msg.Content), &chatData); err == nil {
+				roomService, exists := s.rooms[chatData.RoomId]
+				if exists {
+					chatMsg := Message{
+						Type:    "chat",
+						Content: fmt.Sprintf("%s: %s", chatData.UserId, chatData.Message),
+					}
+
+					// Broadcast to all room participants
+					for _, client := range roomService.Room.Clients {
+						err := client.Conn.WriteJSON(chatMsg)
+						if err != nil {
+							log.Printf("Error sending chat to %s: %v", client.UserId, err)
+						}
+					}
+					log.Printf("Broadcasted message to room %s: %s", chatData.RoomId, chatMsg.Content)
+				} else {
+					log.Printf("Room %s does not exist for chat", chatData.RoomId)
+				}
+			} else {
+				log.Printf("Error unmarshalling chat data: %v", err)
+			}
+
 		default:
-			log.Printf("Unknown message type: %s", msg.Type) // Log unknown message type
+			log.Printf("Unknown message type: %s", msg.Type)
 		}
 	}
 }
@@ -122,8 +139,7 @@ func (s *SocketService) handleClient(wsConn *websocket.Conn, clientAddr string) 
 func (s *SocketService) BroadcastMessage(msg Message) {
 	s.clients.Range(func(key, value interface{}) bool {
 		client := value.(*websocket.Conn)
-		err := client.WriteJSON(msg)
-		if err != nil {
+		if err := client.WriteJSON(msg); err != nil {
 			log.Printf("Error broadcasting to %v: %v", key, err)
 			s.clients.Delete(key)
 		}
@@ -132,11 +148,9 @@ func (s *SocketService) BroadcastMessage(msg Message) {
 }
 
 func TestSocketService() {
-
 	socketService := NewSocketService()
 
 	go func() {
-		// Broadcast a test message after a short delay
 		time.Sleep(5 * time.Second)
 		socketService.BroadcastMessage(Message{
 			Type:    "test",
@@ -155,6 +169,5 @@ func TestSocketService() {
 	}()
 
 	log.Println("Starting WebSocket Test Service")
-
 	socketService.Start()
 }

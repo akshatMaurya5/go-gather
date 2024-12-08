@@ -4,99 +4,125 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WebSocket Test</title>
+    <title>WebSocket Chat</title>
 </head>
 
 <body>
-    <h1>WebSocket Test</h1>
+    <h1>WebSocket Chat Test</h1>
+
     <button id="createRoom">Create Room</button>
-    <input type="text" id="roomId" placeholder="Enter Room ID" />
+    <input type="text" id="roomId" placeholder="Enter Room ID">
     <button id="joinRoom">Join Room</button>
+
+    <br><br>
+
+    <input type="text" id="message" placeholder="Enter message">
     <button id="send">Send Message</button>
+
+    <h2>Messages</h2>
     <div id="messages"></div>
 
     <script>
         let ws;
-        let userId; // Declare userId without initialization
+        let userId;
 
         function initializeWebSocket() {
             ws = new WebSocket('ws://localhost:64527/ws');
 
-            ws.onopen = function () {
+            ws.onopen = () => {
                 console.log('Connected to the server');
-                document.getElementById('messages').innerHTML += '<p>Connected to the server</p>';
+                displayMessage('Connected to the server');
             };
 
             ws.onmessage = function (event) {
                 console.log('Message from server: ', event.data);
-                document.getElementById('messages').innerHTML += '<p>Message from server: ' + event.data + '</p>';
+                const message = JSON.parse(event.data);
 
-                // Display join messages
-                if (event.data.includes('joined room')) {
-                    document.getElementById('messages').innerHTML += '<p>' + event.data + '</p>';
-                }
+                // Display all message types
+                const messagesDiv = document.getElementById('messages');
+                const msgElement = document.createElement('p');
+                msgElement.textContent = `${message.content}`;
+                messagesDiv.appendChild(msgElement);
             };
 
-            ws.onerror = function (error) {
+            ws.onerror = (error) => {
                 console.error('WebSocket error: ', error);
             };
 
-            ws.onclose = function () {
+            ws.onclose = () => {
                 console.log('Disconnected from the server');
-                document.getElementById('messages').innerHTML += '<p>Disconnected from the server</p>';
+                displayMessage('Disconnected from the server');
             };
         }
 
-        // Initialize WebSocket on page load
+        function displayMessage(content) {
+            const messagesDiv = document.getElementById('messages');
+            const msgElement = document.createElement('p');
+            msgElement.textContent = content;
+            messagesDiv.appendChild(msgElement);
+        }
+
         initializeWebSocket();
 
-        document.getElementById('createRoom').onclick = function () {
+        document.getElementById('createRoom').onclick = () => {
             if (ws && ws.readyState === WebSocket.OPEN) {
-                userId = 'user_' + Math.floor(Math.random() * 10000); // Generate a random user ID
-                ws.send(JSON.stringify({ type: 'createRoom' })); // Send create room message
-                // Automatically join the room after creation
-                ws.onmessage = function (event) {
+                userId = `user_${Math.floor(Math.random() * 10000)}`;
+                ws.send(JSON.stringify({ type: 'createRoom' }));
+
+                ws.onmessage = (event) => {
                     const response = JSON.parse(event.data);
                     if (response.type === 'info' && response.content.includes('Room created with ID:')) {
-                        const roomId = response.content.split(': ')[1]; // Extract room ID from the message
-                        const joinMessage = JSON.stringify({ type: 'joinRoom', content: JSON.stringify({ roomId: roomId, userId: userId }) });
-                        ws.send(joinMessage); // Send join room message with userId
-                        console.log('Automatically joining room: ', roomId, ' with User ID: ', userId);
+                        const roomId = response.content.split(': ')[1];
+                        const joinMessage = {
+                            type: 'joinRoom',
+                            content: JSON.stringify({ roomId, userId })
+                        };
+                        ws.send(JSON.stringify(joinMessage));
+                        console.log(`Automatically joining room: ${roomId} with User ID: ${userId}`);
                     }
+                    displayMessage(response.content);
                 };
             } else {
-                console.error('WebSocket is not open. Current state: ', ws.readyState);
+                console.error('WebSocket not open. Current state:', ws.readyState);
             }
         };
 
-        document.getElementById('joinRoom').onclick = function () {
-            const roomId = document.getElementById('roomId').value.trim(); // Trim whitespace
-            if (ws && ws.readyState === WebSocket.OPEN && roomId) { // Check if WebSocket is open and roomId is not empty
-                const newUserId = 'user_' + Math.floor(Math.random() * 10000); // Generate a new random user ID
-                const joinMessage = JSON.stringify({ type: 'joinRoom', content: JSON.stringify({ roomId: roomId, userId: newUserId }) });
-                ws.send(joinMessage); // Send join room message with new userId
-                console.log('Joining room: ', roomId, ' with User ID: ', newUserId);
+        document.getElementById('joinRoom').onclick = () => {
+            const roomId = document.getElementById('roomId').value.trim();
+            if (ws && ws.readyState === WebSocket.OPEN && roomId) {
+                userId = `user_${Math.floor(Math.random() * 10000)}`;
+                const joinMessage = {
+                    type: 'joinRoom',
+                    content: JSON.stringify({ roomId, userId })
+                };
+                ws.send(JSON.stringify(joinMessage));
+                console.log(`Joining room: ${roomId} with User ID: ${userId}`);
             } else {
-                if (!roomId) {
-                    console.error('Room ID is empty');
-                } else if (!ws) {
-                    console.error('WebSocket is not initialized');
-                } else {
-                    console.error('WebSocket is not open. Current state: ', ws.readyState);
-                }
+                console.error('WebSocket not ready or Room ID is empty.');
             }
         };
 
-        document.getElementById('send').onclick = function () {
-            if (ws) {
-                const message = JSON.stringify({ type: 'chat', content: 'Hello, server!' });
-                ws.send(message);
-                console.log('Sent: ', message);
+        document.getElementById('send').onclick = () => {
+            const roomId = document.getElementById('roomId').value.trim();
+            const message = document.getElementById('message').value.trim();
+
+            if (ws && ws.readyState === WebSocket.OPEN && roomId && message) {
+                const chatMessage = {
+                    type: 'chat',
+                    content: JSON.stringify({
+                        roomId,
+                        userId,
+                        message
+                    })
+                };
+                ws.send(JSON.stringify(chatMessage));
+                console.log('Sent:', chatMessage);
+                document.getElementById('message').value = '';
+            } else {
+                console.error('WebSocket not ready or Room ID/Message is empty.');
             }
         };
     </script>
 </body>
 
 </html>
-
-</```rewritten_file>
