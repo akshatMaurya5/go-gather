@@ -5,6 +5,23 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>WebSocket Chat</title>
+    <style>
+        #arena {
+            width: 800px;
+            height: 600px;
+            border: 1px solid black;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .user {
+            width: 10px;
+            height: 10px;
+            background-color: red;
+            position: absolute;
+            border-radius: 50%;
+        }
+    </style>
 </head>
 
 <body>
@@ -22,9 +39,14 @@
     <h2>Messages</h2>
     <div id="messages"></div>
 
+    <h2>Arena</h2>
+    <div id="arena"></div>
+
     <script>
         let ws;
         let userId;
+        let roomId;
+        const userElements = {};
 
         function initializeWebSocket() {
             ws = new WebSocket('ws://localhost:64527/ws');
@@ -38,11 +60,11 @@
                 console.log('Message from server: ', event.data);
                 const message = JSON.parse(event.data);
 
-                // Display all message types
-                const messagesDiv = document.getElementById('messages');
-                const msgElement = document.createElement('p');
-                msgElement.textContent = `${message.content}`;
-                messagesDiv.appendChild(msgElement);
+                if (message.type === 'move') {
+                    updateUserPosition(message);
+                } else {
+                    displayMessage(message.content);
+                }
             };
 
             ws.onerror = (error) => {
@@ -62,6 +84,58 @@
             messagesDiv.appendChild(msgElement);
         }
 
+        function updateUserPosition(movement) {
+            let userElement = userElements[movement.userId];
+            if (!userElement) {
+                userElement = document.createElement('div');
+                userElement.className = 'user';
+                userElements[movement.userId] = userElement;
+                document.getElementById('arena').appendChild(userElement);
+            }
+            userElement.style.left = `${movement.x}px`;
+            userElement.style.top = `${movement.y}px`;
+        }
+
+        function sendMovement(x, y) {
+            if (ws && ws.readyState === WebSocket.OPEN && roomId) {
+                const moveMessage = {
+                    type: 'move',
+                    content: JSON.stringify({
+                        roomId,
+                        userId,
+                        x,
+                        y
+                    })
+                };
+                ws.send(JSON.stringify(moveMessage));
+            }
+        }
+
+        document.addEventListener('keydown', (event) => {
+            const userElement = userElements[userId];
+            if (!userElement) return;
+
+            let x = parseInt(userElement.style.left || '0');
+            let y = parseInt(userElement.style.top || '0');
+
+            switch (event.key) {
+                case 'ArrowUp':
+                    y -= 5;
+                    break;
+                case 'ArrowDown':
+                    y += 5;
+                    break;
+                case 'ArrowLeft':
+                    x -= 5;
+                    break;
+                case 'ArrowRight':
+                    x += 5;
+                    break;
+            }
+
+            sendMovement(x, y);
+        });
+
         initializeWebSocket();
 
         document.getElementById('createRoom').onclick = () => {
@@ -72,7 +146,7 @@
                 ws.onmessage = (event) => {
                     const response = JSON.parse(event.data);
                     if (response.type === 'info' && response.content.includes('Room created with ID:')) {
-                        const roomId = response.content.split(': ')[1];
+                        roomId = response.content.split(': ')[1];
                         const joinMessage = {
                             type: 'joinRoom',
                             content: JSON.stringify({ roomId, userId })
@@ -88,7 +162,7 @@
         };
 
         document.getElementById('joinRoom').onclick = () => {
-            const roomId = document.getElementById('roomId').value.trim();
+            roomId = document.getElementById('roomId').value.trim();
             if (ws && ws.readyState === WebSocket.OPEN && roomId) {
                 userId = `user_${Math.floor(Math.random() * 10000)}`;
                 const joinMessage = {
@@ -103,7 +177,6 @@
         };
 
         document.getElementById('send').onclick = () => {
-            const roomId = document.getElementById('roomId').value.trim();
             const message = document.getElementById('message').value.trim();
 
             if (ws && ws.readyState === WebSocket.OPEN && roomId && message) {
