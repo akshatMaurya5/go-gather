@@ -206,14 +206,10 @@ func randomInt() int {
 func getUsersInSpace(space *Room, excludeUser *User) []map[string]interface{} {
 	var users []map[string]interface{}
 	for _, u := range space.Users {
-		// Always include the current user if they are the only user
-		// if len(space.Users) == 1 || u.ID != excludeUser.ID {
 		users = append(users, map[string]interface{}{
 			"id": u.ID,
 		})
-		// }
 	}
-	log.Printf("Users in space %s (excluding %s): %v", space.ID, excludeUser.ID, users)
 	return users
 }
 
