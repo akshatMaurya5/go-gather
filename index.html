@@ -49,7 +49,7 @@
         const userElements = {};
 
         function initializeWebSocket() {
-            ws = new WebSocket('ws://localhost:64527/ws');
+            ws = new WebSocket('ws://localhost:3001');
 
             ws.onopen = () => {
                 console.log('Connected to the server');
