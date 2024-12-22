@@ -86,6 +86,16 @@ func (wsh WebSocketHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 		case "move":
 			log.Print("Processing move event")
+			if currentUser == nil {
+				log.Print("Error: No current user found")
+				sendMessage(c, map[string]interface{}{
+					"type": "error",
+					"payload": map[string]string{
+						"message": "User not authenticated",
+					},
+				})
+				break
+			}
 			var payload MovePayload
 			if err := json.Unmarshal(wsMsg.Payload, &payload); err != nil {
 				log.Printf("error unmarshalling move payload: %v", err)
@@ -125,8 +135,8 @@ func handleJoin(c *websocket.Conn, payload JoinPayload, user **User) {
 		ID:      getRandomString(10),
 		UserID:  userID,
 		SpaceID: spaceID,
-		X:       0,
-		Y:       0,
+		X:       0, // Spawn
+		Y:       0, // Default Y position
 		Conn:    c,
 	}
 	space.Users[newUser.ID] = newUser
@@ -150,6 +160,10 @@ func handleJoin(c *websocket.Conn, payload JoinPayload, user **User) {
 }
 
 func handleMove(c *websocket.Conn, user *User, payload MovePayload) {
+	if user == nil {
+		log.Print("Error: User is nil in handleMove")
+		return
+	}
 	// Simple validation (only allow moves in adjacent tiles)
 	xDisplacement := abs(user.X - payload.X)
 	yDisplacement := abs(user.Y - payload.Y)
@@ -168,6 +182,7 @@ func handleMove(c *websocket.Conn, user *User, payload MovePayload) {
 	}
 }
 
+// Helper functions
 func authenticateUser(token string) string {
 	return getRandomString(5)
 }
@@ -181,7 +196,7 @@ func getRandomString(length int) string {
 }
 
 func randomInt() int {
-	return rand.Intn(10)
+	return rand.Intn(5) // 62 is the length of the characters string
 }
 
 func getUsersInSpace(space *Room, excludeUser *User) []map[string]interface{} {
