@@ -4,197 +4,121 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WebSocket Chat</title>
+    <title>Arena Game</title>
     <style>
         #arena {
-            width: 800px;
-            height: 600px;
+            width: 500px;
+            height: 500px;
             border: 1px solid black;
             position: relative;
             overflow: hidden;
         }
 
         .user {
-            width: 10px;
-            height: 10px;
-            background-color: red;
+            width: 20px;
+            height: 20px;
+            background-color: blue;
             position: absolute;
-            border-radius: 50%;
         }
     </style>
 </head>
 
 <body>
-    <h1>WebSocket Chat Test</h1>
-
-    <button id="createRoom">Create Room</button>
-    <input type="text" id="roomId" placeholder="Enter Room ID">
-    <button id="joinRoom">Join Room</button>
-
-    <br><br>
-
-    <input type="text" id="message" placeholder="Enter message">
-    <button id="send">Send Message</button>
-
-    <h2>Messages</h2>
-    <div id="messages"></div>
-
-    <h2>Arena</h2>
     <div id="arena"></div>
-
     <script>
-        let ws;
-        let userId;
-        let roomId;
-        const userElements = {};
+        const arena = document.getElementById('arena');
+        const socket = new WebSocket('ws://localhost:3001');
 
-        function initializeWebSocket() {
-            ws = new WebSocket('ws://localhost:3001');
+        let currentUser = null;
+        let previousPosition = { x: 0, y: 0 }; // Track user's previous position
 
-            ws.onopen = () => {
-                console.log('Connected to the server');
-                displayMessage('Connected to the server');
-            };
-
-            ws.onmessage = function (event) {
-                console.log('Message from server: ', event.data);
-                const message = JSON.parse(event.data);
-
-                if (message.type === 'move') {
-                    updateUserPosition(message);
-                } else {
-                    displayMessage(message.content);
+        socket.onopen = () => {
+            console.log('Connected to WebSocket');
+            // Join the space with a token (replace 'your_token' with actual token)
+            socket.send(JSON.stringify({
+                type: 'join',
+                payload: {
+                    spaceId: 'exampleSpace',
+                    token: 'your_token'
                 }
-            };
+            }));
+        };
 
-            ws.onerror = (error) => {
-                console.error('WebSocket error: ', error);
-            };
-
-            ws.onclose = () => {
-                console.log('Disconnected from the server');
-                displayMessage('Disconnected from the server');
-            };
-        }
-
-        function displayMessage(content) {
-            const messagesDiv = document.getElementById('messages');
-            const msgElement = document.createElement('p');
-            msgElement.textContent = content;
-            messagesDiv.appendChild(msgElement);
-        }
-
-        function updateUserPosition(movement) {
-            let userElement = userElements[movement.userId];
-            if (!userElement) {
-                userElement = document.createElement('div');
-                userElement.className = 'user';
-                userElements[movement.userId] = userElement;
-                document.getElementById('arena').appendChild(userElement);
+        socket.onmessage = (event) => {
+            const message = JSON.parse(event.data);
+            switch (message.type) {
+                case 'space-joined':
+                    currentUser = document.createElement('div');
+                    currentUser.className = 'user';
+                    currentUser.style.left = message.payload.spawn.x * 20 + 'px';
+                    currentUser.style.top = message.payload.spawn.y * 20 + 'px';
+                    previousPosition = { x: message.payload.spawn.x, y: message.payload.spawn.y };
+                    arena.appendChild(currentUser);
+                    break;
+                case 'movement':
+                    // Update other users' positions
+                    const userDiv = document.querySelector(`.user[data-id="${message.payload.userId}"]`);
+                    if (userDiv) {
+                        userDiv.style.left = message.payload.x * 20 + 'px';
+                        userDiv.style.top = message.payload.y * 20 + 'px';
+                    }
+                    break;
+                case 'user-joined':
+                    const newUserDiv = document.createElement('div');
+                    newUserDiv.className = 'user';
+                    newUserDiv.setAttribute('data-id', message.payload.userId);
+                    newUserDiv.style.left = message.payload.x * 20 + 'px';
+                    newUserDiv.style.top = message.payload.y * 20 + 'px';
+                    arena.appendChild(newUserDiv);
+                    break;
+                case 'movement-rejected':
+                    console.log('Movement rejected:', message.payload);
+                    // Reset user position to previous valid position
+                    currentUser.style.left = previousPosition.x * 20 + 'px';
+                    currentUser.style.top = previousPosition.y * 20 + 'px';
+                    break;
+                default:
+                    console.log('Unknown message type:', message.type);
             }
-            userElement.style.left = `${movement.x}px`;
-            userElement.style.top = `${movement.y}px`;
-        }
-
-        function sendMovement(x, y) {
-            if (ws && ws.readyState === WebSocket.OPEN && roomId) {
-                const moveMessage = {
-                    type: 'move',
-                    content: JSON.stringify({
-                        roomId,
-                        userId,
-                        x,
-                        y
-                    })
-                };
-                ws.send(JSON.stringify(moveMessage));
-            }
-        }
+        };
 
         document.addEventListener('keydown', (event) => {
-            const userElement = userElements[userId];
-            if (!userElement) return;
+            if (!currentUser) return;
 
-            let x = parseInt(userElement.style.left || '0');
-            let y = parseInt(userElement.style.top || '0');
+            let x = previousPosition.x;
+            let y = previousPosition.y;
 
             switch (event.key) {
                 case 'ArrowUp':
-                    y -= 5;
+                    y -= 1;
                     break;
                 case 'ArrowDown':
-                    y += 5;
+                    y += 1;
                     break;
                 case 'ArrowLeft':
-                    x -= 5;
+                    x -= 1;
                     break;
                 case 'ArrowRight':
-                    x += 5;
+                    x += 1;
                     break;
+                default:
+                    return; // Exit this handler for other keys
             }
 
-            sendMovement(x, y);
+            // Prevent moves beyond boundaries
+            if (x < 0 || y < 0 || x >= 25 || y >= 25) return;
+
+            // Send move event to server
+            socket.send(JSON.stringify({
+                type: 'move',
+                payload: { x, y }
+            }));
+
+            // Temporarily update position (will reset if rejected)
+            currentUser.style.left = x * 20 + 'px';
+            currentUser.style.top = y * 20 + 'px';
+            previousPosition = { x, y };
         });
-
-        initializeWebSocket();
-
-        document.getElementById('createRoom').onclick = () => {
-            if (ws && ws.readyState === WebSocket.OPEN) {
-                userId = `user_${Math.floor(Math.random() * 10000)}`;
-                ws.send(JSON.stringify({ type: 'createRoom' }));
-
-                ws.onmessage = (event) => {
-                    const response = JSON.parse(event.data);
-                    if (response.type === 'info' && response.content.includes('Room created with ID:')) {
-                        roomId = response.content.split(': ')[1];
-                        const joinMessage = {
-                            type: 'joinRoom',
-                            content: JSON.stringify({ roomId, userId })
-                        };
-                        ws.send(JSON.stringify(joinMessage));
-                        console.log(`Automatically joining room: ${roomId} with User ID: ${userId}`);
-                    }
-                    displayMessage(response.content);
-                };
-            } else {
-                console.error('WebSocket not open. Current state:', ws.readyState);
-            }
-        };
-
-        document.getElementById('joinRoom').onclick = () => {
-            roomId = document.getElementById('roomId').value.trim();
-            if (ws && ws.readyState === WebSocket.OPEN && roomId) {
-                userId = `user_${Math.floor(Math.random() * 10000)}`;
-                const joinMessage = {
-                    type: 'joinRoom',
-                    content: JSON.stringify({ roomId, userId })
-                };
-                ws.send(JSON.stringify(joinMessage));
-                console.log(`Joining room: ${roomId} with User ID: ${userId}`);
-            } else {
-                console.error('WebSocket not ready or Room ID is empty.');
-            }
-        };
-
-        document.getElementById('send').onclick = () => {
-            const message = document.getElementById('message').value.trim();
-
-            if (ws && ws.readyState === WebSocket.OPEN && roomId && message) {
-                const chatMessage = {
-                    type: 'chat',
-                    content: JSON.stringify({
-                        roomId,
-                        userId,
-                        message
-                    })
-                };
-                ws.send(JSON.stringify(chatMessage));
-                console.log('Sent:', chatMessage);
-                document.getElementById('message').value = '';
-            } else {
-                console.error('WebSocket not ready or Room ID/Message is empty.');
-            }
-        };
     </script>
 </body>
 
