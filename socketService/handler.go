@@ -124,19 +124,16 @@ func handleJoin(c *websocket.Conn, payload JoinPayload, user **User) {
 	spaceID := payload.SpaceID
 	space, exists := RoomManager.Rooms[spaceID]
 
-	//  Create a new space if it doesn't exist
 	if !exists {
 		space = &Room{ID: spaceID, Users: make(map[string]*User)}
 		RoomManager.Rooms[spaceID] = space
 	}
-
-	// Create new user and add to room
 	newUser := &User{
 		ID:      getRandomString(10),
 		UserID:  userID,
 		SpaceID: spaceID,
-		X:       0, // Spawn
-		Y:       0, // Default Y position
+		X:       20, // Updated spawn position
+		Y:       20, // Updated spawn position
 		Conn:    c,
 	}
 	space.Users[newUser.ID] = newUser
@@ -154,6 +151,9 @@ func handleJoin(c *websocket.Conn, payload JoinPayload, user **User) {
 			"users": getUsersInSpace(space, newUser),
 		},
 	}
+
+	log.Printf("User spawn position: %d, %d", newUser.X, newUser.Y)
+
 	sendMessage(c, response)
 
 	broadcastUserJoin(space, newUser)
@@ -164,13 +164,14 @@ func handleMove(c *websocket.Conn, user *User, payload MovePayload) {
 		log.Print("Error: User is nil in handleMove")
 		return
 	}
-	// Simple validation (only allow moves in adjacent tiles)
+
 	xDisplacement := abs(user.X - payload.X)
 	yDisplacement := abs(user.Y - payload.Y)
 	if (xDisplacement == 1 && yDisplacement == 0) || (xDisplacement == 0 && yDisplacement == 1) {
 		user.X = payload.X
 		user.Y = payload.Y
 		broadcastMovement(user)
+		log.Printf("User moved to: %d, %d", user.X, user.Y)
 	} else {
 		sendMessage(c, map[string]interface{}{
 			"type": "movement-rejected",
@@ -196,15 +197,19 @@ func getRandomString(length int) string {
 }
 
 func randomInt() int {
-	return rand.Intn(5) // 62 is the length of the characters string
+	return rand.Intn(62)
 }
 
 func getUsersInSpace(space *Room, excludeUser *User) []map[string]interface{} {
 	var users []map[string]interface{}
 	for _, u := range space.Users {
-		users = append(users, map[string]interface{}{
-			"id": u.ID,
-		})
+		if u.ID != excludeUser.ID {
+			users = append(users, map[string]interface{}{
+				"id": u.ID,
+				"x":  u.X,
+				"y":  u.Y,
+			})
+		}
 	}
 	return users
 }
@@ -227,6 +232,19 @@ func broadcastUserJoin(space *Room, user *User) {
 			})
 		}
 	}
+
+	for _, u := range space.Users {
+		if u.ID != user.ID {
+			sendMessage(user.Conn, map[string]interface{}{
+				"type": "user-joined",
+				"payload": map[string]interface{}{
+					"userId": u.UserID,
+					"x":      u.X,
+					"y":      u.Y,
+				},
+			})
+		}
+	}
 }
 
 func broadcastMovement(user *User) {
@@ -234,9 +252,10 @@ func broadcastMovement(user *User) {
 		if u.ID != user.ID {
 			sendMessage(u.Conn, map[string]interface{}{
 				"type": "movement",
-				"payload": map[string]int{
-					"x": user.X,
-					"y": user.Y,
+				"payload": map[string]interface{}{
+					"userId": user.UserID,
+					"x":      user.X,
+					"y":      user.Y,
 				},
 			})
 		}
