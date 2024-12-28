@@ -7,43 +7,10 @@ import (
 	"net/http"
 	"strings"
 
+	"go-meta/types"
+
 	"github.com/gorilla/websocket"
 )
-
-type WebSocketMessage struct {
-	Type    string          `json:"type"`
-	Payload json.RawMessage `json:"payload"`
-}
-
-type JoinPayload struct {
-	SpaceID string `json:"spaceId"`
-	Token   string `json:"token"`
-}
-
-type MovePayload struct {
-	X int `json:"x"`
-	Y int `json:"y"`
-}
-
-type User struct {
-	ID      string
-	UserID  string
-	SpaceID string
-	X       int
-	Y       int
-	Conn    *websocket.Conn
-}
-
-type Room struct {
-	ID    string
-	Users map[string]*User
-}
-
-var RoomManager = struct {
-	Rooms map[string]*Room
-}{
-	Rooms: make(map[string]*Room),
-}
 
 type WebSocketHandler struct {
 	Upgrader websocket.Upgrader
@@ -59,7 +26,7 @@ func (wsh WebSocketHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer c.Close()
 
 	log.Print("Client connected")
-	var currentUser *User
+	var currentUser *types.User
 
 	for {
 		_, msg, err := c.ReadMessage()
@@ -68,7 +35,7 @@ func (wsh WebSocketHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 
-		var wsMsg WebSocketMessage
+		var wsMsg types.WebSocketMessage
 		if err := json.Unmarshal(msg, &wsMsg); err != nil {
 			log.Printf("error unmarshalling message: %v", err)
 			break
@@ -77,7 +44,7 @@ func (wsh WebSocketHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		switch wsMsg.Type {
 		case "join":
 			log.Print("Processing join event")
-			var payload JoinPayload
+			var payload types.JoinPayload
 			if err := json.Unmarshal(wsMsg.Payload, &payload); err != nil {
 				log.Printf("error unmarshalling join payload: %v", err)
 				break
@@ -96,7 +63,7 @@ func (wsh WebSocketHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				})
 				break
 			}
-			var payload MovePayload
+			var payload types.MovePayload
 			if err := json.Unmarshal(wsMsg.Payload, &payload); err != nil {
 				log.Printf("error unmarshalling move payload: %v", err)
 				break
@@ -109,7 +76,7 @@ func (wsh WebSocketHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func handleJoin(c *websocket.Conn, payload JoinPayload, user **User) {
+func handleJoin(c *websocket.Conn, payload types.JoinPayload, user **types.User) {
 	log.Printf("Handling join for space: %s", payload.SpaceID)
 
 	// TODO :  Authenticate user with token
@@ -122,13 +89,13 @@ func handleJoin(c *websocket.Conn, payload JoinPayload, user **User) {
 	}
 
 	spaceID := payload.SpaceID
-	space, exists := RoomManager.Rooms[spaceID]
+	space, exists := types.RoomManager.Rooms[spaceID]
 
 	if !exists {
-		space = &Room{ID: spaceID, Users: make(map[string]*User)}
-		RoomManager.Rooms[spaceID] = space
+		space = &types.Room{ID: spaceID, Users: make(map[string]*types.User)}
+		types.RoomManager.Rooms[spaceID] = space
 	}
-	newUser := &User{
+	newUser := &types.User{
 		ID:      getRandomString(10),
 		UserID:  userID,
 		SpaceID: spaceID,
@@ -159,7 +126,7 @@ func handleJoin(c *websocket.Conn, payload JoinPayload, user **User) {
 	broadcastUserJoin(space, newUser)
 }
 
-func handleMove(c *websocket.Conn, user *User, payload MovePayload) {
+func handleMove(c *websocket.Conn, user *types.User, payload types.MovePayload) {
 	if user == nil {
 		log.Print("Error: User is nil in handleMove")
 		return
@@ -200,7 +167,7 @@ func randomInt() int {
 	return rand.Intn(62)
 }
 
-func getUsersInSpace(space *Room, excludeUser *User) []map[string]interface{} {
+func getUsersInSpace(space *types.Room, excludeUser *types.User) []map[string]interface{} {
 	var users []map[string]interface{}
 	for _, u := range space.Users {
 		if u.ID != excludeUser.ID {
@@ -219,7 +186,7 @@ func sendMessage(c *websocket.Conn, message map[string]interface{}) {
 	c.WriteMessage(websocket.TextMessage, msg)
 }
 
-func broadcastUserJoin(space *Room, user *User) {
+func broadcastUserJoin(space *types.Room, user *types.User) {
 	for _, u := range space.Users {
 		if u.ID != user.ID {
 			sendMessage(u.Conn, map[string]interface{}{
@@ -247,8 +214,8 @@ func broadcastUserJoin(space *Room, user *User) {
 	}
 }
 
-func broadcastMovement(user *User) {
-	for _, u := range RoomManager.Rooms[user.SpaceID].Users {
+func broadcastMovement(user *types.User) {
+	for _, u := range types.RoomManager.Rooms[user.SpaceID].Users {
 		if u.ID != user.ID {
 			sendMessage(u.Conn, map[string]interface{}{
 				"type": "movement",
