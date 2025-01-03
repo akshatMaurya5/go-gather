@@ -62,7 +62,7 @@ func (ws *WebSocketManager) RemoveUser(clientID, roomID string) {
 	ws.lock.Lock()
 	defer ws.lock.Unlock()
 
-	log.Println("Removing user", clientID, "from room", roomID)
+	log.Println("Trying to remove user", clientID, "from room", roomID)
 	room, exists := ws.rooms[roomID]
 
 	if !exists {
