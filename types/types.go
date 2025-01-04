@@ -1,46 +1,41 @@
 package types
 
-import (
-	"encoding/json"
+import "github.com/gorilla/websocket"
 
-	"github.com/gorilla/websocket"
-)
-
-type WebSocketMessage struct {
-	Type    string          `json:"type"`
-	Payload json.RawMessage `json:"payload"`
+type Message struct {
+	Type string      `json:"type"`
+	Data interface{} `json:"data"`
 }
 
-type JoinPayload struct {
-	SpaceID string `json:"spaceId"`
-	Token   string `json:"token"`
+type Response struct {
+	Type    string      `json:"type"`
+	Success bool        `json:"success"`
+	Data    interface{} `json:"data,omitempty"`
+	Error   string      `json:"error,omitempty"`
 }
 
-type MovePayload struct {
+type MoveData struct {
 	X int `json:"x"`
 	Y int `json:"y"`
 }
 
-type User struct {
-	ID      string
-	UserID  string
-	SpaceID string
-	X       int
-	Y       int
-	Conn    *websocket.Conn
+type Client struct {
+	ID     string
+	roomID string
+	Conn   *websocket.Conn
+	X      int
+	Y      int
 }
 
 type Room struct {
-	ID    string
-	Users map[string]*User
+	ID      string
+	clients map[string]*Client
 }
 
-var RoomManager = struct {
-	Rooms map[string]*Room
-}{
-	Rooms: make(map[string]*Room),
-}
-
-type WebSocketHandler struct {
-	Upgrader websocket.Upgrader
+type Client struct {
+	ID     string
+	roomID string
+	Conn   *websocket.Conn
+	X      int
+	Y      int
 }

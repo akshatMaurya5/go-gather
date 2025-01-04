@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!-- <!DOCTYPE html>
 <html lang="en">
 
 <head>
@@ -119,6 +119,42 @@
             currentUser.style.top = y * 20 + 'px';
             previousPosition = { x, y };
         });
+    </script>
+</body>
+
+</html> -->
+
+
+
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>WebSocket Test</title>
+</head>
+
+<body>
+    <script>
+        const userId = "testUser"; // Replace with your userId
+        const roomId = "testRoom"; // Replace with your roomId
+        const ws = new WebSocket(`ws://localhost:8080/ws?userId=${userId}&roomId=${roomId}`);
+
+        ws.onopen = function () {
+            console.log("Connected to WebSocket server");
+            ws.send("Hello from the client!");
+        };
+
+        ws.onmessage = function (event) {
+            console.log("Message from server: ", event.data);
+        };
+
+        ws.onerror = function (error) {
+            console.error("WebSocket error: ", error);
+        };
+
+        ws.onclose = function () {
+            console.log("WebSocket connection closed");
+        };
     </script>
 </body>
 
