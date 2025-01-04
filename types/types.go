@@ -31,11 +31,3 @@ type Room struct {
 	ID      string
 	clients map[string]*Client
 }
-
-type Client struct {
-	ID     string
-	roomID string
-	Conn   *websocket.Conn
-	X      int
-	Y      int
-}
