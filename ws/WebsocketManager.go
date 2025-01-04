@@ -1,6 +1,9 @@
 package ws
 
 import (
+	"encoding/json"
+	"fmt"
+	"go-gather/types"
 	"log"
 	"net/http"
 	"sync"
@@ -8,11 +11,12 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-// Client represents a connected user.
 type Client struct {
 	ID     string
 	roomID string
 	Conn   *websocket.Conn
+	X      int
+	Y      int
 }
 
 type Room struct {
@@ -20,7 +24,6 @@ type Room struct {
 	clients map[string]*Client
 }
 
-// WebSocketManager manages WebSocket connections.
 type WebSocketManager struct {
 	rooms map[string]*Room
 	lock  sync.RWMutex
@@ -36,6 +39,10 @@ func GetWebSocketInstance() *WebSocketManager {
 		}
 	})
 	return instance
+}
+
+type WebSocketHandler struct {
+	Upgrader websocket.Upgrader
 }
 
 func (ws *WebSocketManager) AddUser(client *Client, roomID string) {
@@ -96,9 +103,39 @@ func (ws *WebSocketManager) BroadcastToRoom(roomID, message string) {
 	}
 }
 
-// WebSocketHandler is a struct that holds the websocket upgrader.
-type WebSocketHandler struct {
-	Upgrader websocket.Upgrader
+// BroadcastMove HAS TO BE REVISITED FOR LOGIC CHECKING
+func (ws *WebSocketManager) BroadcastMove(client *Client, roomID string) {
+	ws.lock.RLock()
+	defer ws.lock.RUnlock()
+
+	_, exists := ws.rooms[roomID]
+
+	if !exists {
+		log.Println("Room:", roomID, "not found")
+		return
+	}
+
+	message := fmt.Sprintf("%s moved to (%d, %d)", client.ID, client.X, client.Y)
+	ws.BroadcastToRoom(roomID, message)
+}
+
+func (c *Client) SendMessage(eventType string, payload interface{}) {
+	response := types.Response{
+		Type:    eventType,
+		Success: true,
+		Data:    payload,
+	}
+
+	messageBytes, err := json.Marshal(response)
+	if err != nil {
+		log.Println("Error marshalling message:", err)
+		return
+	}
+
+	err = c.Conn.WriteMessage(websocket.TextMessage, messageBytes)
+	if err != nil {
+		log.Println("Error writing message to client", c.ID, ":", err)
+	}
 }
 
 // Implement the ServeHTTP method for the WebSocketHandler
