@@ -5,22 +5,30 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
 )
 
+var dbInstance *sql.DB
+
 func ConnectionString() string {
-
-	err := godotenv.Load(".env")
-
+	// Try loading from project root directly
+	projectRoot, _ := filepath.Abs(".")
+	err := godotenv.Load(filepath.Join(projectRoot, ".env"))
 	if err != nil {
-		log.Fatalf("Error loading .env file")
+		log.Printf("Warning: Error loading .env file: %v", err)
+		// Continue execution with environment variables that may be set through other means
 	}
 
 	SQL_URI := os.Getenv("SQL_URI")
+	if SQL_URI == "" {
+		log.Fatal("SQL_URI environment variable is not set")
+	}
 
 	return SQL_URI
+
 }
 
 func connect() *sql.DB {
@@ -76,16 +84,15 @@ func createTable(db *sql.DB, tableName string) {
 	}
 }
 
-func getInstance() *sql.DB {
-	db := connect()
-
-	// createTable(db, "users")
-
-	return db
+func GetInstance() *sql.DB {
+	if dbInstance == nil {
+		dbInstance = connect()
+	}
+	return dbInstance
 }
 
 func TestSQLDbConnection() {
-	db := getInstance()
+	db := GetInstance()
 
 	fmt.Println(db)
 }
