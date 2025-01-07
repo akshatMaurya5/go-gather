@@ -69,19 +69,31 @@ func handleWebsocket(w http.ResponseWriter, r *http.Request) {
 func handleEvents(wsManager *WebSocketManager, client *Client, roomID string, message types.Message) {
 	var response types.Response
 
+	log.Printf("Received message type: %s from user: %s\n", message.Type, client.ID)
+
 	switch message.Type {
 	case "join":
 		success := handleJoinRoom(wsManager, client, roomID)
-		response = types.Response{
-			Type:    "user-joined",
-			Success: success,
-			Data: map[string]string{
-				"userId": client.ID,
-				"roomId": roomID,
-				"X":      strconv.Itoa(client.X),
-				"Y":      strconv.Itoa(client.Y),
-			},
+
+		if success == true {
+			response = types.Response{
+				Type:    "user-joined",
+				Success: success,
+				Data: map[string]string{
+					"userId": client.ID,
+					"roomId": roomID,
+					"X":      strconv.Itoa(client.X),
+					"Y":      strconv.Itoa(client.Y),
+				},
+			}
+		} else {
+			response = types.Response{
+				Type:    "user-joining-failed",
+				Success: false,
+				Error:   "User does not have access to this room",
+			}
 		}
+
 	case "leave-room":
 		success := handleLeaveRoom(wsManager, client, roomID)
 		response = types.Response{
@@ -142,6 +154,50 @@ func handleEvents(wsManager *WebSocketManager, client *Client, roomID string, me
 }
 
 func handleJoinRoom(wsManager *WebSocketManager, client *Client, roomID string) bool {
+	log.Println("handleJoinRoom called")
+	url := fmt.Sprintf("http://localhost:3000/authenticate?email=%s", client.ID)
+
+	resp, err := http.Get(url)
+	if err != nil {
+		log.Printf("Error calling authenticate endpoint: %v", err)
+		return false
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		EmailAddress string   `json:"emailAddress"`
+		Rooms        []string `json:"rooms"`
+		Success      bool     `json:"success"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		log.Printf("Error decoding response: %v", err)
+		return false
+	}
+
+	if !result.Success {
+		log.Printf("Error: API returned unsuccessful response")
+		return false
+	}
+
+	log.Println("these are the rooms:", result.Rooms)
+
+	rooms := result.Rooms
+
+	isAuthorised := false
+
+	for _, room := range rooms {
+
+		if room == roomID {
+			isAuthorised = true
+			break
+		}
+
+	}
+
+	if !isAuthorised {
+		return false
+	}
 
 	wsManager.AddUser(client, roomID)
 	log.Printf("User %s joined room %s\n", client.ID, roomID)

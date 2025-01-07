@@ -63,7 +63,7 @@ func (ws *WebSocketManager) AddUser(client *Client, roomID string) {
 	ws.lock.Lock()
 	defer ws.lock.Unlock()
 
-	log.Println("Adding user", client.ID, "to room", roomID)
+	log.Println("Adding user - wsManager", client.ID, "to room", roomID)
 
 	if _, exists := ws.rooms[roomID]; !exists {
 		ws.rooms[roomID] = &Room{
