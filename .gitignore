@@ -40,3 +40,4 @@ tmp/
 /tmp
 
 tmp/runner-build.exe
+tmp/go-meta.exe
