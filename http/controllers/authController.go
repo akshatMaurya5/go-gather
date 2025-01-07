@@ -40,6 +40,21 @@ func SignUp(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+
+	// Initialize empty rooms array if not provided
+	if user.Rooms == nil {
+		user.Rooms = []string{}
+	}
+
+	if user.Email == "" || user.Password == "" {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"message": "Email or password missing",
+		})
+		return
+	}
+
 	fmt.Println("User Req body: ", user)
 
 	db := db.GetInstance()
@@ -114,13 +129,15 @@ func SignIn(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to generate token", http.StatusInternalServerError)
 		return
 	}
-
 	fmt.Println("Token Generated: ", tokenString)
+
+	rooms := user.GetRoomsOfUser(db)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
 		"token":   tokenString,
+		"rooms":   rooms,
 	})
 }
 

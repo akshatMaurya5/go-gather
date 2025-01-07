@@ -16,6 +16,6 @@ func main() {
 	routes.AuthRoutes(router)
 
 	// Start the HTTP server
-	log.Println("Server running on port 3001")
-	log.Fatal(http.ListenAndServe(":3001", router))
+	log.Println("Server running on port 3000")
+	log.Fatal(http.ListenAndServe(":3000", router))
 }

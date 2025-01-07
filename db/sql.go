@@ -14,12 +14,9 @@ import (
 var dbInstance *sql.DB
 
 func ConnectionString() string {
-	// Try loading from project root directly
-	projectRoot, _ := filepath.Abs(".")
-	err := godotenv.Load(filepath.Join(projectRoot, ".env"))
+	err := godotenv.Load(filepath.Join("..", ".env"))
 	if err != nil {
-		log.Printf("Warning: Error loading .env file: %v", err)
-		// Continue execution with environment variables that may be set through other means
+		log.Printf("Error loading .env file: %v", err)
 	}
 
 	SQL_URI := os.Getenv("SQL_URI")

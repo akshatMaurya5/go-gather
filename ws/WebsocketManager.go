@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"go-gather/types"
 	"log"
+	"math/rand"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
@@ -43,6 +45,18 @@ func GetWebSocketInstance() *WebSocketManager {
 
 type WebSocketHandler struct {
 	Upgrader websocket.Upgrader
+}
+
+var seededRand *rand.Rand = rand.New(rand.NewSource(time.Now().UnixNano()))
+
+func createUniqueRoomId() string {
+	const charSet = "ABCDEFGHIJKLMNOPQRSTUVWXY0123456789abcdefghijklmnopqrstuvw"
+
+	b := make([]byte, 5)
+	for i := range b {
+		b[i] = charSet[seededRand.Intn(len(charSet))]
+	}
+	return string(b)
 }
 
 func (ws *WebSocketManager) AddUser(client *Client, roomID string) {

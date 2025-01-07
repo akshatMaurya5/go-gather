@@ -46,6 +46,25 @@ func (u *User) Authenticate(db *sql.DB) bool {
 		return false
 	}
 
-	log.Println("User authenticated successfully")
+	log.Println("User authenticated successfully!")
 	return true
+}
+
+func (u *User) GetRoomsOfUser(db *sql.DB) []string {
+	username := u.Email
+
+	if username == "" {
+		log.Println("Invalid username")
+		return []string{}
+	}
+
+	var rooms []string
+	query := `SELECT rooms FROM users WHERE email=$1`
+	err := db.QueryRow(query, username).Scan(pq.Array(&rooms))
+	if err != nil {
+		log.Printf("Error querying rooms for user %s: %v", username, err)
+		return []string{}
+	}
+
+	return rooms
 }
