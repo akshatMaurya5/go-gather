@@ -142,11 +142,31 @@ func SignIn(w http.ResponseWriter, r *http.Request) {
 }
 
 func Authenticate(w http.ResponseWriter, r *http.Request) {
-	w.WriteHeader(http.StatusOK)
+	email := r.URL.Query().Get("email")
+
+	if email == "" {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"message": "Email parameter is required",
+		})
+		return
+	}
+
+	var user models.User
+	user.Email = email
+	user.Password = ""
+	user.Rooms = []string{}
+
+	db := db.GetInstance()
+	// defer db.Close()
+
+	rooms := user.GetRoomsOfUser(db)
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"success": true,
-		"message": "Authentication successful",
-		"token":   r.Header.Get("Authorization"),
+		"success":      true,
+		"rooms":        rooms,
+		"emailAddress": email,
 	})
 }

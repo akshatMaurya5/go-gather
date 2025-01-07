@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"strconv"
 
+	// "go-gather/http"
+
 	"github.com/gorilla/websocket"
 )
 
@@ -140,6 +142,7 @@ func handleEvents(wsManager *WebSocketManager, client *Client, roomID string, me
 }
 
 func handleJoinRoom(wsManager *WebSocketManager, client *Client, roomID string) bool {
+
 	wsManager.AddUser(client, roomID)
 	log.Printf("User %s joined room %s\n", client.ID, roomID)
 	wsManager.BroadcastToRoom(roomID, fmt.Sprintf("%s joined the room at %d,%d", client.ID, client.X, client.Y))

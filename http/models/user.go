@@ -49,20 +49,29 @@ func (u *User) Authenticate(db *sql.DB) bool {
 	log.Println("User authenticated successfully!")
 	return true
 }
-
 func (u *User) GetRoomsOfUser(db *sql.DB) []string {
 	username := u.Email
 
 	if username == "" {
-		log.Println("Invalid username")
+		log.Println("Empty email")
 		return []string{}
 	}
 
+	if db == nil {
+		log.Println("Database connection is nil")
+		return []string{}
+	}
+
+	log.Printf("Getting rooms for user %s", username)
 	var rooms []string
 	query := `SELECT rooms FROM users WHERE email=$1`
 	err := db.QueryRow(query, username).Scan(pq.Array(&rooms))
 	if err != nil {
-		log.Printf("Error querying rooms for user %s: %v", username, err)
+		if err == sql.ErrConnDone {
+			log.Printf("Database connection is closed for user %s", username)
+		} else {
+			log.Printf("Error querying rooms for user %s: %v", username, err)
+		}
 		return []string{}
 	}
 
