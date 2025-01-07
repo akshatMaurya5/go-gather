@@ -37,6 +37,6 @@ Thumbs.db
 .env
 .cursorignore
 tmp/
-
+/tmp
 
 tmp/runner-build.exe
