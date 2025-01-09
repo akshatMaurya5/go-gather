@@ -152,7 +152,34 @@ func (c *Client) SendMessage(eventType string, payload interface{}) {
 	}
 }
 
-// Implement the ServeHTTP method for the WebSocketHandler
+func (ws *WebSocketManager) GetUserConnection(userID string) *Client {
+	ws.lock.RLock()
+	defer ws.lock.RUnlock()
+
+	for _, room := range ws.rooms {
+		if client, exists := room.clients[userID]; exists {
+			return client
+		}
+	}
+	return nil
+}
+
+func (ws *WebSocketManager) GetUsersInRoom(roomID string) []string {
+	ws.lock.RLock()
+	defer ws.lock.RUnlock()
+
+	room, exists := ws.rooms[roomID]
+	if !exists {
+		return []string{}
+	}
+
+	users := make([]string, 0, len(room.clients))
+	for userID := range room.clients {
+		users = append(users, userID)
+	}
+	return users
+}
+
 func (h WebSocketHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	handleWebsocket(w, r)
 }
