@@ -31,3 +31,8 @@ type Room struct {
 	ID      string
 	clients map[string]*Client
 }
+
+type SignalingMessage struct {
+	Type string      `json:"type"`
+	Data interface{} `json:"data"`
+}
