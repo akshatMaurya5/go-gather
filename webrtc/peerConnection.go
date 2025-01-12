@@ -41,9 +41,9 @@ func (wm *WebRTCManager) GetPeerConnection(clientID string) (*webrtc.PeerConnect
 	return pc, exists
 }
 
-func (wm *WebRTCManager) ClosePeerConnection(clientID string) {
-	if pc, exists := wm.PeerConnections[clientID]; exists {
-		pc.Close()
-		delete(wm.PeerConnections, clientID)
-	}
-}
+// func (wm *WebRTCManager) ClosePeerConnection(clientID string) {
+// 	if pc, exists := wm.PeerConnections[clientID]; exists {
+// 		pc.Close()
+// 		delete(wm.PeerConnections, clientID)
+// 	}
+// }

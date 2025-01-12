@@ -1,7 +1,5 @@
 package types
 
-import "github.com/gorilla/websocket"
-
 type Message struct {
 	Type string      `json:"type"`
 	Data interface{} `json:"data"`
@@ -19,19 +17,6 @@ type MoveData struct {
 	Y int `json:"y"`
 }
 
-type Client struct {
-	ID     string
-	roomID string
-	Conn   *websocket.Conn
-	X      int
-	Y      int
-}
-
-type Room struct {
-	ID      string
-	clients map[string]*Client
-}
-
 // WebRTC-related types
 type WebRTCMessage struct {
 	Type     string      `json:"type"`     // "webrtc-offer", "webrtc-answer", "webrtc-candidate"
@@ -46,8 +31,8 @@ type SDP struct {
 }
 
 type ICECandidate struct {
-	Candidate        string `json:"candidate"`
-	SDPMid           string `json:"sdpMid"`
-	SDPMLineIndex    uint16 `json:"sdpMLineIndex"`
-	UsernameFragment string `json:"usernameFragment"`
+	Candidate        string  `json:"candidate"`
+	SDPMid           *string `json:"sdpMid,omitempty"`
+	SDPMLineIndex    *uint16 `json:"sdpMLineIndex,omitempty"`
+	UsernameFragment *string `json:"usernameFragment,omitempty"`
 }
