@@ -4,23 +4,15 @@ import (
 	"go-gather/ws"
 	"log"
 	"net/http"
-
-	"github.com/gorilla/websocket"
 )
 
 func main() {
-	log.Print("Starting WebSocket server...")
+	// Use ws.HandleWebsocket instead of ws.NewWebSocketHandler
+	http.HandleFunc("/ws", ws.HandleWebsocket)
 
-	wsh := ws.WebSocketHandler{
-		Upgrader: websocket.Upgrader{
-			CheckOrigin: func(r *http.Request) bool { return true },
-		},
+	log.Println("Server started at :8080")
+	err := http.ListenAndServe(":8080", nil)
+	if err != nil {
+		log.Fatal("ListenAndServe: ", err)
 	}
-
-	http.HandleFunc("/ws", wsh.ServeHTTP)
-
-	log.Print("WebSocket server listening on port 3001...")
-
-	// db.TestSQLDbConnection()
-	log.Fatal(http.ListenAndServe(":3001", nil))
 }

@@ -5,226 +5,160 @@ import (
 	"fmt"
 	"go-gather/types"
 	"log"
-	"math"
-	"net/http"
-	"strconv"
-
-	// "go-gather/http"
+	"sync"
 
 	"github.com/gorilla/websocket"
 )
 
-var upgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool {
-		return true
-	},
+type Client struct {
+	ID     string
+	roomID string
+	Conn   *websocket.Conn
+	X      int
+	Y      int
 }
 
-func handleWebsocket(w http.ResponseWriter, r *http.Request) {
-	conn, err := upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		log.Println("WebSocket upgrade failed:", err)
+type Room struct {
+	ID      string
+	clients map[string]*Client
+}
+
+type WebSocketManager struct {
+	rooms map[string]*Room
+	lock  sync.RWMutex
+}
+
+var instance *WebSocketManager
+var once sync.Once
+
+func GetWebSocketInstance() *WebSocketManager {
+	once.Do(func() {
+		instance = &WebSocketManager{
+			rooms: make(map[string]*Room),
+		}
+	})
+	return instance
+}
+
+func (ws *WebSocketManager) AddUser(client *Client, roomID string) {
+	ws.lock.Lock()
+	defer ws.lock.Unlock()
+
+	log.Println("Adding user - wsManager", client.ID, "to room", roomID)
+
+	if _, exists := ws.rooms[roomID]; !exists {
+		ws.rooms[roomID] = &Room{
+			ID:      roomID,
+			clients: make(map[string]*Client),
+		}
+	}
+
+	client.roomID = roomID
+
+	ws.rooms[roomID].clients[client.ID] = client
+
+	log.Println("User", client.ID, "added to room", roomID)
+}
+
+func (ws *WebSocketManager) RemoveUser(clientID, roomID string) {
+	ws.lock.Lock()
+	defer ws.lock.Unlock()
+
+	log.Println("Trying to remove user", clientID, "from room", roomID)
+	room, exists := ws.rooms[roomID]
+
+	if !exists {
+		log.Println("Room", roomID, "not found")
 		return
 	}
-	defer conn.Close()
-	userID := r.URL.Query().Get("userId")
-	roomID := r.URL.Query().Get("roomId")
 
-	if userID == "" || roomID == "" {
-		log.Println("userId or roomId is missing")
-		conn.WriteMessage(websocket.TextMessage, []byte("userId and roomId are required"))
+	if client, ok := room.clients[clientID]; ok {
+		// Close the peer connection if exists
+		webrtcManager.ClosePeerConnection(client.ID)
+		delete(room.clients, clientID)
+		log.Println("User", clientID, "removed from room", roomID)
+	}
+}
+
+func (ws *WebSocketManager) BroadcastToRoom(roomID, message string) {
+	log.Println("Broadcasting message", message, "to room", roomID)
+	ws.lock.RLock()
+	defer ws.lock.RUnlock()
+
+	room, exists := ws.rooms[roomID]
+
+	if !exists {
+		log.Println("Room:", roomID, "not found")
 		return
 	}
 
-	// Get WebSocket manager singleton
-	wsManager := GetWebSocketInstance()
+	for _, client := range room.clients {
+		err := client.Conn.WriteMessage(websocket.TextMessage, []byte(message))
 
-	client := &Client{
-		ID:     userID,
-		roomID: roomID,
-		Conn:   conn,
-		X:      0,
-		Y:      0,
-	}
-	wsManager.AddUser(client, roomID)
-
-	for {
-		_, messageBytes, err := conn.ReadMessage()
 		if err != nil {
-			log.Printf("Error reading types.Message from client %s: %v\n", userID, err)
-			wsManager.RemoveUser(userID, roomID)
-			break
+			log.Println("Error writing message to client", client.ID, ":", err)
 		}
-
-		var message types.Message
-		if err := json.Unmarshal(messageBytes, &message); err != nil {
-			log.Println("Invalid message format:", err)
-			continue
-		}
-
-		handleEvents(wsManager, client, roomID, message)
 	}
 }
 
-func handleEvents(wsManager *WebSocketManager, client *Client, roomID string, message types.Message) {
-	var response types.Response
+func (ws *WebSocketManager) BroadcastMove(client *Client, roomID string) {
+	ws.lock.RLock()
+	defer ws.lock.RUnlock()
 
-	log.Printf("Received message type: %s from user: %s\n", message.Type, client.ID)
+	_, exists := ws.rooms[roomID]
 
-	switch message.Type {
-	case "join":
-		success := handleJoinRoom(wsManager, client, roomID)
-
-		if success == true {
-			response = types.Response{
-				Type:    "user-joined",
-				Success: success,
-				Data: map[string]string{
-					"userId": client.ID,
-					"roomId": roomID,
-					"X":      strconv.Itoa(client.X),
-					"Y":      strconv.Itoa(client.Y),
-				},
-			}
-		} else {
-			response = types.Response{
-				Type:    "user-joining-failed",
-				Success: false,
-				Error:   "User does not have access to this room",
-			}
-		}
-
-	case "leave-room":
-		success := handleLeaveRoom(wsManager, client, roomID)
-		response = types.Response{
-			Type:    "user-left",
-			Success: success,
-			Data: map[string]string{
-				"userId": client.ID,
-				"roomId": roomID,
-			},
-		}
-	case "send-types.Message":
-		messageStr, ok := message.Data.(string)
-		if !ok {
-			response = types.Response{
-				Type:    "error",
-				Success: false,
-				Error:   "Invalid types.Message format",
-			}
-		} else {
-			wsManager.BroadcastToRoom(roomID, messageStr)
-			response = types.Response{
-				Type:    "message-sent",
-				Success: true,
-				Data: map[string]string{
-					"message": messageStr,
-				},
-			}
-		}
-	case "move":
-		var moveData types.MoveData
-		dataBytes, _ := json.Marshal(message.Data)
-		if err := json.Unmarshal(dataBytes, &moveData); err != nil {
-			response = types.Response{
-				Type:    "error",
-				Success: false,
-				Error:   "Invalid move data",
-			}
-		} else {
-			success := handleMove(wsManager, client, roomID, moveData)
-			response = types.Response{
-				Type:    "move-completed",
-				Success: success,
-				Data: map[string]int{
-					"x": client.X,
-					"y": client.Y,
-				},
-			}
-		}
-	default:
-		response = types.Response{
-			Type:    "error",
-			Success: false,
-			Error:   "Unknown event type",
-		}
+	if !exists {
+		log.Println("Room:", roomID, "not found")
+		return
 	}
 
-	client.SendMessage(response.Type, response)
+	message := fmt.Sprintf("%s moved to (%d, %d)", client.ID, client.X, client.Y)
+	ws.BroadcastToRoom(roomID, message)
 }
 
-func handleJoinRoom(wsManager *WebSocketManager, client *Client, roomID string) bool {
-	log.Println("handleJoinRoom called")
-	url := fmt.Sprintf("http://localhost:3000/authenticate?email=%s", client.ID)
+func (c *Client) SendMessage(eventType string, payload interface{}) {
+	response := types.Response{
+		Type:    eventType,
+		Success: true,
+		Data:    payload,
+	}
 
-	resp, err := http.Get(url)
+	messageBytes, err := json.Marshal(response)
 	if err != nil {
-		log.Printf("Error calling authenticate endpoint: %v", err)
-		return false
-	}
-	defer resp.Body.Close()
-
-	var result struct {
-		EmailAddress string   `json:"emailAddress"`
-		Rooms        []string `json:"rooms"`
-		Success      bool     `json:"success"`
+		log.Println("Error marshalling message:", err)
+		return
 	}
 
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		log.Printf("Error decoding response: %v", err)
-		return false
+	err = c.Conn.WriteMessage(websocket.TextMessage, messageBytes)
+	if err != nil {
+		log.Println("Error writing message to client", c.ID, ":", err)
 	}
+}
 
-	if !result.Success {
-		log.Printf("Error: API returned unsuccessful response")
-		return false
-	}
+func (ws *WebSocketManager) GetClientByID(clientID string) *Client {
+	ws.lock.RLock()
+	defer ws.lock.RUnlock()
 
-	log.Println("these are the rooms:", result.Rooms)
-
-	rooms := result.Rooms
-
-	isAuthorised := false
-
-	for _, room := range rooms {
-
-		if room == roomID {
-			isAuthorised = true
-			break
+	for _, room := range ws.rooms {
+		if client, exists := room.clients[clientID]; exists {
+			return client
 		}
-
 	}
-
-	if !isAuthorised {
-		return false
-	}
-
-	wsManager.AddUser(client, roomID)
-	log.Printf("User %s joined room %s\n", client.ID, roomID)
-	wsManager.BroadcastToRoom(roomID, fmt.Sprintf("%s joined the room at %d,%d", client.ID, client.X, client.Y))
-	return true
+	return nil
 }
 
-func handleLeaveRoom(wsManager *WebSocketManager, client *Client, roomID string) bool {
-	log.Printf("User %s left room %s\n", client.ID, roomID)
-	wsManager.RemoveUser(client.ID, roomID)
-	wsManager.BroadcastToRoom(roomID, fmt.Sprintf("%s left the room", client.ID))
-	return true
-}
+func (ws *WebSocketManager) GetUsersInRoom(roomID string) []string {
+	ws.lock.RLock()
+	defer ws.lock.RUnlock()
 
-func handleMove(wsManager *WebSocketManager, client *Client, roomID string, moveData types.MoveData) bool {
-	log.Printf("User %s moved in room %s\n", client.ID, roomID)
-
-	xDisplacement := math.Abs(float64(client.X - moveData.X))
-	yDisplacement := math.Abs(float64(client.Y - moveData.Y))
-
-	if xDisplacement+yDisplacement > 1 {
-		log.Println("Invalid move")
-		return false
+	room, exists := ws.rooms[roomID]
+	if !exists {
+		return []string{}
 	}
 
-	client.X = moveData.X
-	client.Y = moveData.Y
-	wsManager.BroadcastMove(client, roomID)
-	return true
+	users := make([]string, 0, len(room.clients))
+	for userID := range room.clients {
+		users = append(users, userID)
+	}
+	return users
 }
