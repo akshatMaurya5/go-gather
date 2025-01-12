@@ -1,160 +1,359 @@
-<!-- <!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Arena Game</title>
+    <title>WebRTC Test</title>
     <style>
-        #arena {
-            width: 500px;
-            height: 500px;
-            border: 1px solid black;
-            position: relative;
-            overflow: hidden;
+        /* CSS Styles */
+
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f0f0f0;
         }
 
-        .user {
-            width: 20px;
-            height: 20px;
-            background-color: blue;
-            position: absolute;
+        #video-container {
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+            margin-top: 50px;
+        }
+
+        video {
+            width: 45%;
+            border: 2px solid #ccc;
+            border-radius: 8px;
+        }
+
+        #controls {
+            display: flex;
+            justify-content: center;
+            margin-top: 20px;
+        }
+
+        #controls input,
+        #controls button {
+            margin: 0 10px;
+            padding: 10px;
+            font-size: 16px;
+        }
+
+        #messages {
+            width: 80%;
+            margin: 20px auto;
+            max-height: 150px;
+            overflow-y: auto;
+            background: #fff;
+            padding: 10px;
+            border: 1px solid #ccc;
+        }
+
+        #messages p {
+            margin: 5px 0;
+        }
+
+        #chat {
+            display: flex;
+            justify-content: center;
+            margin-top: 10px;
+        }
+
+        #chat input {
+            width: 70%;
+            padding: 10px;
+            font-size: 16px;
+        }
+
+        #chat button {
+            padding: 10px;
+            font-size: 16px;
         }
     </style>
 </head>
 
 <body>
-    <div id="arena"></div>
+
+    <div id="controls">
+        <input type="text" id="userId" placeholder="Enter your User ID (email)">
+        <input type="text" id="roomId" placeholder="Enter Room ID">
+        <button id="joinBtn">Join Room</button>
+    </div>
+
+    <div id="video-container" style="display: none;">
+        <video id="localVideo" autoplay muted></video>
+        <video id="remoteVideo" autoplay></video>
+    </div>
+
+    <div id="chat" style="display: none;">
+        <input type="text" id="messageInput" placeholder="Type a message">
+        <button id="sendBtn">Send</button>
+    </div>
+
+    <div id="messages" style="display: none;"></div>
+
     <script>
-        const arena = document.getElementById('arena');
-        const socket = new WebSocket('ws://localhost:3001');
+        // JavaScript Code
 
-        let currentUser = null;
-        let previousPosition = { x: 0, y: 0 }; // Track user's previous position
+        // Variables
+        let ws;
+        let localStream;
+        let remoteStream;
+        let peerConnection;
 
-        socket.onopen = () => {
-            console.log('Connected to WebSocket');
-            // Join the space with a token (replace 'your_token' with actual token)
-            socket.send(JSON.stringify({
-                type: 'join',
-                payload: {
-                    spaceId: 'exampleSpace',
-                    token: 'your_token'
+        const servers = {
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' }
+            ]
+        };
+
+        // Get DOM elements
+        const userIdInput = document.getElementById('userId');
+        const roomIdInput = document.getElementById('roomId');
+        const joinBtn = document.getElementById('joinBtn');
+        const localVideo = document.getElementById('localVideo');
+        const remoteVideo = document.getElementById('remoteVideo');
+        const videoContainer = document.getElementById('video-container');
+        const chatContainer = document.getElementById('chat');
+        const messagesDiv = document.getElementById('messages');
+        const messageInput = document.getElementById('messageInput');
+        const sendBtn = document.getElementById('sendBtn');
+
+        // Event listeners
+        joinBtn.addEventListener('click', joinRoom);
+        sendBtn.addEventListener('click', sendMessage);
+
+        function joinRoom() {
+            const userId = userIdInput.value.trim();
+            const roomId = roomIdInput.value.trim();
+
+            if (!userId || !roomId) {
+                alert('Please enter both User ID and Room ID.');
+                return;
+            }
+
+            // Initialize WebSocket connection
+            ws = new WebSocket('ws://localhost:8080/ws?userId=' + encodeURIComponent(userId) + '&roomId=' + encodeURIComponent(roomId));
+
+            ws.onopen = () => {
+                console.log('WebSocket connection established.');
+                // Send join message
+                const joinMessage = {
+                    type: 'join',
+                    data: null
+                };
+                ws.send(JSON.stringify(joinMessage));
+            };
+
+            ws.onmessage = async (event) => {
+                const message = JSON.parse(event.data);
+                console.log('Received message:', message);
+
+                switch (message.type) {
+                    case 'user-joined':
+                        await startLocalStream();
+                        await createOffer();
+                        break;
+                    case 'webrtc-offer':
+                        await handleOffer(message.data);
+                        break;
+                    case 'webrtc-answer':
+                        await handleAnswer(message.data);
+                        break;
+                    case 'webrtc-candidate':
+                        await handleCandidate(message.data);
+                        break;
+                    case 'message-sent':
+                        displayMessage('You: ' + message.data.message);
+                        break;
+                    case 'send-message':
+                        displayMessage(message.data.senderId + ': ' + message.data.message);
+                        break;
+                    case 'user-left':
+                        handleUserLeft();
+                        break;
+                    default:
+                        console.log('Unknown message type:', message.type);
                 }
-            }));
-        };
+            };
 
-        socket.onmessage = (event) => {
-            const message = JSON.parse(event.data);
-            switch (message.type) {
-                case 'space-joined':
-                    currentUser = document.createElement('div');
-                    currentUser.className = 'user';
-                    currentUser.style.left = message.payload.spawn.x * 20 + 'px';
-                    currentUser.style.top = message.payload.spawn.y * 20 + 'px';
-                    previousPosition = { x: message.payload.spawn.x, y: message.payload.spawn.y };
-                    arena.appendChild(currentUser);
-                    break;
-                case 'movement':
-                    // Update other users' positions
-                    const userDiv = document.querySelector(`.user[data-id="${message.payload.userId}"]`);
-                    if (userDiv) {
-                        userDiv.style.left = message.payload.x * 20 + 'px';
-                        userDiv.style.top = message.payload.y * 20 + 'px';
+            ws.onerror = (error) => {
+                console.error('WebSocket error:', error);
+            };
+
+            ws.onclose = () => {
+                console.log('WebSocket connection closed.');
+                handleUserLeft();
+            };
+
+            // Update UI
+            joinBtn.disabled = true;
+            userIdInput.disabled = true;
+            roomIdInput.disabled = true;
+            videoContainer.style.display = 'flex';
+            chatContainer.style.display = 'flex';
+            messagesDiv.style.display = 'block';
+        }
+
+        async function startLocalStream() {
+            try {
+                localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+                localVideo.srcObject = localStream;
+            } catch (err) {
+                console.error('Error accessing media devices.', err);
+            }
+        }
+
+        async function createOffer() {
+            peerConnection = new RTCPeerConnection(servers);
+
+            // Add local stream tracks to peer connection
+            localStream.getTracks().forEach(track => {
+                peerConnection.addTrack(track, localStream);
+            });
+
+            // Handle remote stream
+            remoteStream = new MediaStream();
+            remoteVideo.srcObject = remoteStream;
+
+            peerConnection.ontrack = event => {
+                event.streams[0].getTracks().forEach(track => {
+                    remoteStream.addTrack(track);
+                });
+            };
+
+            // Handle ICE candidates
+            peerConnection.onicecandidate = event => {
+                if (event.candidate) {
+                    const candidateMessage = {
+                        type: 'webrtc-candidate',
+                        data: {
+                            type: 'webrtc-candidate',
+                            senderId: userIdInput.value.trim(),
+                            targetId: '', // You can set targetId if necessary
+                            payload: event.candidate.toJSON()
+                        }
+                    };
+                    ws.send(JSON.stringify(candidateMessage));
+                }
+            };
+
+            // Create offer
+            const offer = await peerConnection.createOffer();
+            await peerConnection.setLocalDescription(offer);
+
+            // Send offer to server
+            const offerMessage = {
+                type: 'webrtc-offer',
+                data: {
+                    type: 'webrtc-offer',
+                    senderId: userIdInput.value.trim(),
+                    targetId: '', // You can set targetId if necessary
+                    payload: peerConnection.localDescription
+                }
+            };
+            ws.send(JSON.stringify(offerMessage));
+        }
+
+        async function handleOffer(message) {
+            if (!peerConnection) {
+                peerConnection = new RTCPeerConnection(servers);
+
+                // Handle remote stream
+                remoteStream = new MediaStream();
+                remoteVideo.srcObject = remoteStream;
+
+                peerConnection.ontrack = event => {
+                    event.streams[0].getTracks().forEach(track => {
+                        remoteStream.addTrack(track);
+                    });
+                };
+
+                // Add local tracks
+                localStream.getTracks().forEach(track => {
+                    peerConnection.addTrack(track, localStream);
+                });
+
+                // Handle ICE candidates
+                peerConnection.onicecandidate = event => {
+                    if (event.candidate) {
+                        const candidateMessage = {
+                            type: 'webrtc-candidate',
+                            data: {
+                                type: 'webrtc-candidate',
+                                senderId: userIdInput.value.trim(),
+                                targetId: message.senderId,
+                                payload: event.candidate.toJSON()
+                            }
+                        };
+                        ws.send(JSON.stringify(candidateMessage));
                     }
-                    break;
-                case 'user-joined':
-                    const newUserDiv = document.createElement('div');
-                    newUserDiv.className = 'user';
-                    newUserDiv.setAttribute('data-id', message.payload.userId);
-                    newUserDiv.style.left = message.payload.x * 20 + 'px';
-                    newUserDiv.style.top = message.payload.y * 20 + 'px';
-                    arena.appendChild(newUserDiv);
-                    break;
-                case 'movement-rejected':
-                    console.log('Movement rejected:', message.payload);
-                    // Reset user position to previous valid position
-                    currentUser.style.left = previousPosition.x * 20 + 'px';
-                    currentUser.style.top = previousPosition.y * 20 + 'px';
-                    break;
-                default:
-                    console.log('Unknown message type:', message.type);
-            }
-        };
-
-        document.addEventListener('keydown', (event) => {
-            if (!currentUser) return;
-
-            let x = previousPosition.x;
-            let y = previousPosition.y;
-
-            switch (event.key) {
-                case 'ArrowUp':
-                    y -= 1;
-                    break;
-                case 'ArrowDown':
-                    y += 1;
-                    break;
-                case 'ArrowLeft':
-                    x -= 1;
-                    break;
-                case 'ArrowRight':
-                    x += 1;
-                    break;
-                default:
-                    return; // Exit this handler for other keys
+                };
             }
 
-            // Prevent moves beyond boundaries
-            if (x < 0 || y < 0 || x >= 25 || y >= 25) return;
+            const remoteDesc = new RTCSessionDescription(message.payload);
+            await peerConnection.setRemoteDescription(remoteDesc);
 
-            // Send move event to server
-            socket.send(JSON.stringify({
-                type: 'move',
-                payload: { x, y }
-            }));
+            const answer = await peerConnection.createAnswer();
+            await peerConnection.setLocalDescription(answer);
 
-            // Temporarily update position (will reset if rejected)
-            currentUser.style.left = x * 20 + 'px';
-            currentUser.style.top = y * 20 + 'px';
-            previousPosition = { x, y };
-        });
-    </script>
-</body>
+            // Send answer back to the sender
+            const answerMessage = {
+                type: 'webrtc-answer',
+                data: {
+                    type: 'webrtc-answer',
+                    senderId: userIdInput.value.trim(),
+                    targetId: message.senderId,
+                    payload: peerConnection.localDescription
+                }
+            };
+            ws.send(JSON.stringify(answerMessage));
+        }
 
-</html> -->
+        async function handleAnswer(message) {
+            const remoteDesc = new RTCSessionDescription(message.payload);
+            await peerConnection.setRemoteDescription(remoteDesc);
+        }
 
+        async function handleCandidate(message) {
+            try {
+                const candidate = new RTCIceCandidate(message.payload);
+                await peerConnection.addIceCandidate(candidate);
+            } catch (err) {
+                console.error('Error adding received ICE candidate', err);
+            }
+        }
 
+        function sendMessage() {
+            const messageText = messageInput.value.trim();
+            if (messageText === '') return;
 
-<!DOCTYPE html>
-<html>
+            const chatMessage = {
+                type: 'send-message',
+                data: messageText
+            };
+            ws.send(JSON.stringify(chatMessage));
 
-<head>
-    <title>WebSocket Test</title>
-</head>
+            messageInput.value = '';
+        }
 
-<body>
-    <script>
-        const userId = "testUser"; // Replace with your userId
-        const roomId = "testRoom"; // Replace with your roomId
-        const ws = new WebSocket(`ws://localhost:8080/ws?userId=${userId}&roomId=${roomId}`);
+        function displayMessage(text) {
+            const messageElement = document.createElement('p');
+            messageElement.textContent = text;
+            messagesDiv.appendChild(messageElement);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
 
-        ws.onopen = function () {
-            console.log("Connected to WebSocket server");
-            ws.send("Hello from the client!");
-        };
-
-        ws.onmessage = function (event) {
-            console.log("Message from server: ", event.data);
-        };
-
-        ws.onerror = function (error) {
-            console.error("WebSocket error: ", error);
-        };
-
-        ws.onclose = function () {
-            console.log("WebSocket connection closed");
-        };
+        function handleUserLeft() {
+            if (peerConnection) {
+                peerConnection.close();
+                peerConnection = null;
+            }
+            if (remoteStream) {
+                remoteStream.getTracks().forEach(track => track.stop());
+                remoteStream = null;
+                remoteVideo.srcObject = null;
+            }
+        }
     </script>
 </body>
 
