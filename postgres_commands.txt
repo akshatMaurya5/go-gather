@@ -1,3 +1,0 @@
-docker pull postgres:latest
-docker run --name postgres-local -e POSTGRES_USER=akshat -e POSTGRES_PASSWORD=password -e POSTGRES_DB=meta -p 5432:5432 -d postgres:latest
-docker exec -it 8977ac22de72 /bin/bash
